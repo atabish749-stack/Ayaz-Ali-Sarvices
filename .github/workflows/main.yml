@@ -1,0 +1,97 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.32.8'
+          channel: stable
+          cache: true
+
+      - name: Extract application source
+        shell: bash
+        run: |
+          set -e
+
+          ZIP_FILE="$(find . -maxdepth 1 -type f -iname '*.zip' | head -n 1)"
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: No ZIP file found."
+            exit 1
+          fi
+
+          echo "Using ZIP: $ZIP_FILE"
+
+          mkdir -p source
+          unzip -o "$ZIP_FILE" -d source
+
+          PUBSPEC="$(find source -name pubspec.yaml -type f | head -n 1)"
+
+          if [ -z "$PUBSPEC" ]; then
+            echo "ERROR: pubspec.yaml was not found inside the ZIP."
+            exit 1
+          fi
+
+          PROJECT_DIR="$(dirname "$PUBSPEC")"
+
+          echo "Flutter project found at: $PROJECT_DIR"
+
+          mkdir -p app
+          cp -a "$PROJECT_DIR"/. app/
+
+      - name: Prepare Android project
+        working-directory: app
+        shell: bash
+        run: |
+          set -e
+
+          if [ ! -f pubspec.yaml ]; then
+            echo "ERROR: pubspec.yaml is missing."
+            exit 1
+          fi
+
+          if [ ! -d android ]; then
+            echo "Android folder not found. Creating Android platform..."
+            flutter create --platforms=android .
+          else
+            echo "Android folder already exists."
+          fi
+
+      - name: Get Flutter packages
+        working-directory: app
+        run: flutter pub get
+
+      - name: Check Dart source
+        working-directory: app
+        run: flutter analyze
+
+      - name: Build release APK
+        working-directory: app
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ayaz-Ali-Services-APK
+          path: app/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
